@@ -233,8 +233,14 @@ Options ParseCommandLine(int argc, char **argv) {
     if (consumed) {
       return;
     }
+    std::string stem;
+    size_t flen = strlen(flag.long_name);
+    if (flag.has_value && strlen(argv[arg]) > flen + 2 &&
+        argv[arg][flen + 2] == '=') {
+      stem = std::string(argv[arg], flen + 2);
+    }
     if (argv[arg] != "--"s + flag.long_name &&
-        argv[arg] != "-"s + flag.short_name) {
+        argv[arg] != "-"s + flag.short_name && stem != "--"s + flag.long_name) {
       return;
     }
     if (flag.parsed && !kCanRepeat<decltype(flag)>) {
@@ -243,12 +249,18 @@ Options ParseCommandLine(int argc, char **argv) {
       exit(1);
     }
     if (flag.has_value) {
-      arg++;
-      if (arg == argc) {
-        fprintf(stderr, "Missing argument for flag --%s!\n", flag.long_name);
-        exit(1);
+      char *val;
+      if (stem.empty()) {
+        arg++;
+        if (arg == argc) {
+          fprintf(stderr, "Missing argument for flag --%s!\n", flag.long_name);
+          exit(1);
+        }
+        val = argv[arg];
+      } else {
+        val = argv[arg] + stem.size() + 1;
       }
-      flag.ParseValue(argv[arg]);
+      flag.ParseValue(val);
     }
     flag.parsed = true;
     consumed = true;
