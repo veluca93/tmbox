@@ -7,13 +7,14 @@ BIN_SRCS:=$(wildcard main/**/*.cc) $(wildcard main/*.cc)
 TEST_SRCS:=$(wildcard **/*_test.cc) $(wildcard *_test.cc)
 BINS:=$(BIN_SRCS:main/%.cc=bin/%)
 TESTS:=$(TEST_SRCS:%.cc=build/%)
-RUNTEST:=$(TESTS:%=runtest/%)
+RUNTEST:=$(TESTS:%=.test_outputs/%)
 SRCS:=$(filter-out ${BIN_SRCS}, ${ALL_SRCS})
 SRCS:=$(filter-out ${TEST_SRCS}, ${SRCS})
 ALL_OBJS:=$(ALL_SRCS:%.cc=build/%.o)
 OBJS:=$(SRCS:%.cc=build/%.o)
 DEPS:=$(ALL_SRCS:%.cc=.deps/%.d)
-DIRS:=$(dir ${ALL_OBJS}) $(dir ${DEPS}) $(dir ${BINS}) $(dir ${TESTS}) build
+DIRS:=$(dir ${ALL_OBJS}) $(dir ${DEPS}) $(dir ${BINS}) $(dir ${TESTS}) \
+	$(dir ${RUNTEST}) build
 
 $(shell mkdir -p $(DIRS))
 
@@ -34,15 +35,15 @@ build/%_test: build/%_test.o ${OBJS}
 bin/%: build/main/%.o ${OBJS}
 	${CXX} $^ -o $@ ${CXXFLAGS} ${LDFLAGS}
 
-.PHONY: clean ${RUNTEST}
-
 test: ${RUNTEST}
 
-${RUNTEST}: runtest/%: %
-	./$^
+.test_outputs/%: %
+	./$^ &> $@ || ( cat $@ && exit 1 )
+
+.PHONY: clean
 
 clean:
-	rm -rf bin/ build/ .deps/
+	rm -rf bin/ build/ .deps/ .test_outputs/
 
 .PRECIOUS: ${DEPS}
 
