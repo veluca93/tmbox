@@ -3,7 +3,7 @@
 
 int main(int argc, char **argv) {
   auto options = ::options::ParseCommandLine(argc, argv);
-  ExecutionResults results; // TODO: call the sandbox.
+  ExecutionResults results = SandboxRegistry::Get()->Execute(options);
   if (options.Get<options::Json>()) {
     PrintJsonResults(results);
   } else {

@@ -41,10 +41,9 @@ template <> struct Flag<bool> {
 
 }; // namespace detail
 
-DEFINE_FLAG(
-    std::string, WorkingDirectory, "directory", 'd',
-    "Working directory for the execution. Defaults to basedir(executable), "
-    "or the current directory if the executable is a relative path.");
+DEFINE_FLAG(std::string, WorkingDirectory, "directory", 'd',
+            "Working directory for the execution. Defaults to the current "
+            "directory.");
 
 DEFINE_FLAG(std::string, Stdin, "stdin", 'i',
             "Absolute/relative path to stdin file.");
