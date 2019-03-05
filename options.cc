@@ -248,7 +248,7 @@ Options ParseCommandLine(int argc, char **argv) {
               flag.long_name);
       exit(1);
     }
-    if (flag.has_value) {
+    if constexpr (std::remove_reference_t<decltype(flag)>::has_value) {
       char *val;
       if (stem.empty()) {
         arg++;
@@ -261,6 +261,8 @@ Options ParseCommandLine(int argc, char **argv) {
         val = argv[arg] + stem.size() + 1;
       }
       flag.ParseValue(val);
+    } else {
+      flag.value = true;
     }
     flag.parsed = true;
     consumed = true;
