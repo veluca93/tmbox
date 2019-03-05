@@ -38,16 +38,17 @@ void PrintResults(const ExecutionResults &results) {
   if (results.killed_by_sandbox) {
     printf("\033[;1mKilled by sandbox\033[;m\n");
   }
-  printf("CPU time: %f\n", results.cpu_time);
-  printf("System time: %f\n", results.sys_time);
-  printf("Wall time: %f\n", results.wall_time);
+  printf("     CPU time: %8.2f s\n", results.cpu_time);
+  printf("  System time: %8.2f s\n", results.sys_time);
+  printf("    Wall time: %8.2f s\n", results.wall_time);
   auto memory_usage = PrettyMemoryUsage(results.memory_usage);
-  printf("Memory usage: %5.3f%ciB\n", memory_usage.first, memory_usage.second);
+  printf(" Memory usage: %8.2f %ciB\n", memory_usage.first,
+         memory_usage.second);
   if (results.status_code != 0) {
-    printf("Return code: %d\n", results.status_code);
+    printf("  Return code: %d\n", results.status_code);
   }
   if (results.signal != 0) {
-    printf("Signal: %s\n", strsignal(results.signal));
+    printf("       Signal: %s\n", strsignal(results.signal));
   }
 }
 
