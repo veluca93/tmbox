@@ -71,8 +71,10 @@ DEFINE_FLAG(
     "Environment variables, in the form NAME=VALUE. Variables with no value "
     "inherit the value from the global environment.");
 
+DEFINE_FLAG(bool, Json, "json", 'j', "Print JSON output");
+
 using Flags = std::tuple<WorkingDirectory, Stdin, Stdout, Stderr, TimeLimit,
-                         WallLimit, MemoryLimit, Environment>;
+                         WallLimit, MemoryLimit, Environment, Json>;
 
 // Positional arguments.
 DEFINE_POSITIONAL(
