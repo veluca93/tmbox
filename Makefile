@@ -2,50 +2,56 @@ CXXFLAGS:=-O3 -Wall -std=c++17 -flto -g -march=native -I. -fno-exceptions
 LDFLAGS:=-flto -lpthread
 CXX:=g++
 
+TARGET:=.
+ifeq (${TARGET},)
+    $(error "Cannot use TARGET as empty string!")
+endif
 ALL_SRCS:=$(wildcard **/*.cc) $(wildcard *.cc)
 BIN_SRCS:=$(wildcard main/**/*.cc) $(wildcard main/*.cc)
 TEST_SRCS:=$(wildcard **/*_test.cc) $(wildcard *_test.cc)
-BINS:=$(BIN_SRCS:main/%.cc=bin/%)
-TESTS:=$(TEST_SRCS:%.cc=build/%)
-RUNTEST:=$(TESTS:%=.test_outputs/%)
+BINS:=$(BIN_SRCS:main/%.cc=${TARGET}/bin/%)
+TEST_NAMES:=$(TEST_SRCS:%.cc=build/%)
+TESTS:=$(TEST_NAMES:%=${TARGET}/%)
+RUNTEST:=$(TEST_NAMES:%=${TARGET}/.test_outputs/%)
 SRCS:=$(filter-out ${BIN_SRCS}, ${ALL_SRCS})
 SRCS:=$(filter-out ${TEST_SRCS}, ${SRCS})
-ALL_OBJS:=$(ALL_SRCS:%.cc=build/%.o)
-OBJS:=$(SRCS:%.cc=build/%.o)
-DEPS:=$(ALL_SRCS:%.cc=.deps/%.d)
-DIRS:=$(dir ${ALL_OBJS}) $(dir ${DEPS}) $(dir ${BINS}) $(dir ${TESTS}) \
-	$(dir ${RUNTEST}) build
+ALL_OBJS:=$(ALL_SRCS:%.cc=${TARGET}/build/%.o)
+OBJS:=$(SRCS:%.cc=${TARGET}/build/%.o)
+DEPS:=$(ALL_SRCS:%.cc=${TARGET}/.deps/%.d)
+DIRS:=$(dir ${ALL_OBJS}) $(dir ${DEPS}) \
+	  $(dir ${BINS}) $(dir ${TESTS}) \
+	  $(dir ${RUNTEST}) ${TARGET}/build
 
 $(shell mkdir -p $(DIRS))
 
 all: ${BINS}
 
-.deps/%.d: %.cc Makefile
-	${CXX} $< -M -MM -MP -MT $(patsubst .deps/%.d,build/%.o,$@) -o $@ ${CXXFLAGS}
+${TARGET}/.deps/%.d: %.cc Makefile
+	${CXX} $< -M -MM -MP -MT $(patsubst ${TARGET}/.deps/%.d,${TARGET}/build/%.o,$@) -o $@ ${CXXFLAGS}
 
-build/%_test.o: %_test.cc .deps/%_test.d
+${TARGET}/build/%_test.o: %_test.cc ${TARGET}/.deps/%_test.d
 	${CXX} $< -c -o $@ ${CXXFLAGS} $(shell pkg-config --cflags gmock gtest)
 
-build/%.o: %.cc .deps/%.d
+${TARGET}/build/%.o: %.cc ${TARGET}/.deps/%.d
 	${CXX} $< -c -o $@ ${CXXFLAGS}
 
-build/%_test: build/%_test.o ${OBJS}
+${TARGET}/build/%_test: ${TARGET}/build/%_test.o ${OBJS}
 	${CXX} $^ -o $@ ${CXXFLAGS} ${LDFLAGS} $(shell pkg-config --libs gmock gtest_main)
 
-bin/%: build/main/%.o ${OBJS}
+${TARGET}/bin/%: ${TARGET}/build/main/%.o ${OBJS}
 	${CXX} $^ -o $@ ${CXXFLAGS} ${LDFLAGS}
 
 test: ${RUNTEST}
 
-.test_outputs/%: %
+${TARGET}/.test_outputs/%: ${TARGET}/%
 	./$^ &> $@ || ( cat $@ && exit 1 )
 
 .PHONY: clean
 
 clean:
-	rm -rf bin/ build/ .deps/ .test_outputs/
+	rm -rf ${TARGET}/bin/ ${TARGET}/build/ ${TARGET}/.deps/ ${TARGET}/.test_outputs/
+	[ "${TARGET}" != "." ] && rmdir ${TARGET} || true
 
 .PRECIOUS: ${DEPS}
 
 -include ${DEPS}
-
