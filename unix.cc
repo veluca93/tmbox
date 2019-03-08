@@ -206,6 +206,9 @@ namespace {
   SET_RLIM(AS, OPTION(MemoryLimit) * 1024);
   SET_RLIM(CPU, ceil(OPTION(TimeLimit)));
   SET_RLIM(CORE, 0);
+  if (!OPTION(Multithreading)) {
+    SET_RLIM(NPROC, 1);
+  }
 
   // Setting stack size does not seem to work on MAC.
 #ifndef __APPLE__
