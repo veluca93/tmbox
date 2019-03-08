@@ -1,6 +1,7 @@
 #include "sandbox.h"
 
 #include "defer.h"
+#include "disallow_fork/disallow_fork.h"
 
 #include <assert.h>
 #include <chrono>
@@ -206,9 +207,6 @@ namespace {
   SET_RLIM(AS, OPTION(MemoryLimit) * 1024);
   SET_RLIM(CPU, ceil(OPTION(TimeLimit)));
   SET_RLIM(CORE, 0);
-  if (!OPTION(Multithreading)) {
-    SET_RLIM(NPROC, 1);
-  }
 
   // Setting stack size does not seem to work on MAC.
 #ifndef __APPLE__
@@ -233,6 +231,11 @@ namespace {
     envp.push_back(const_cast<char *>(env_mem.back().c_str()));
   }
   envp.push_back(nullptr);
+
+  // If multiprocessing is disabled, stop the program from calling fork or exec.
+  if (!OPTION(Multiprocess)) {
+    CSYSCALL(disallow_fork());
+  }
 
   CSYSCALL(execve(exe.c_str(), args.data(), envp.data()));
 

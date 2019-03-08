@@ -70,13 +70,14 @@ DEFINE_FLAG(
     "Environment variables, in the form NAME=VALUE. Variables with no value "
     "inherit the value from the global environment.");
 
-DEFINE_FLAG(bool, Multithreading, "multithreading", 'p',
-            "Allow more than one thread/process.");
+DEFINE_FLAG(bool, Multiprocess, "multiprocess", 'p',
+            "Allow more than one process. Warning: may not properly enforce "
+            "limits/report resource usage!");
 DEFINE_FLAG(bool, Json, "json", 'j', "Print JSON output");
 
 using Flags =
     std::tuple<WorkingDirectory, Stdin, Stdout, Stderr, TimeLimit, WallLimit,
-               MemoryLimit, Environment, Multithreading, Json>;
+               MemoryLimit, Environment, Multiprocess, Json>;
 
 // Positional arguments.
 DEFINE_POSITIONAL(
