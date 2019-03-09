@@ -60,6 +60,8 @@ DEFINE_FLAG(double, WallLimit, "wall", 'w', "Wall time limit, in seconds.");
 
 DEFINE_FLAG(uint64_t, MemoryLimit, "memory", 'm', "Memory limit, in KiB.");
 
+DEFINE_FLAG(uint64_t, FsizeLimit, "fsize", 'f', "File size limit, in KiB.");
+
 struct EnvironmentVariable {
   std::string name;
   std::optional<std::string> value;
@@ -77,7 +79,7 @@ DEFINE_FLAG(bool, Json, "json", 'j', "Print JSON output");
 
 using Flags =
     std::tuple<WorkingDirectory, Stdin, Stdout, Stderr, TimeLimit, WallLimit,
-               MemoryLimit, Environment, Multiprocess, Json>;
+               MemoryLimit, FsizeLimit, Environment, Multiprocess, Json>;
 
 // Positional arguments.
 DEFINE_POSITIONAL(
