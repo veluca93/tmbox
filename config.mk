@@ -5,7 +5,7 @@ CXX:=g++
 ${TGT}build/disallow_fork/bpf.o.tar: ${TGT}build/disallow_fork/bpf_i386.o \
 	${TGT}build/disallow_fork/bpf_x86_64.o ${TGT}build/disallow_fork/bpf_x32.o
 
-BOXES=${TGT}build/unix.o.tar
+BOXES=${TGT}build/unix.o.tar ${TGT}build/namespaces.o.tar
 
 ${TGT}bin/tmbox: ${BOXES}
 
@@ -16,7 +16,7 @@ ${TGT}.test_outputs/build/tests/process_test: ${TGT}bin/fork \
 
 ${TGT}build/tests/misc_test: ${BOXES}
 
-${TGT}.test_outputs/build/tests/limits_test: ${TGT}bin/abort
+${TGT}.test_outputs/build/tests/misc_test: ${TGT}bin/abort
 
 ${TGT}build/tests/limits_test: ${BOXES}
 
