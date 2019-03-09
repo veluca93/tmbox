@@ -5,7 +5,7 @@
 Sandbox *SandboxRegistry::Get() {
   size_t best_idx = Registry().size();
   int best_priority = -1;
-  for (size_t i = 0; i < best_idx; i++) {
+  for (size_t i = 0; i < Registry().size(); i++) {
     if (!Registry()[i]->CanUse())
       continue;
     int priority = Registry()[i]->Priority();
