@@ -1,6 +1,7 @@
 #include "sandbox.h"
 #include <assert.h>
 #include <iostream>
+#include <stdio.h>
 
 Sandbox *SandboxRegistry::Get() {
   size_t best_idx = Registry().size();
@@ -13,6 +14,9 @@ Sandbox *SandboxRegistry::Get() {
       best_idx = i;
       best_priority = priority;
     }
+  }
+  if (best_priority == 0) {
+    fprintf(stderr, "Warning: using unsafe sandbox!\n");
   }
   assert(best_idx != Registry().size());
   return Registry()[best_idx].get();
