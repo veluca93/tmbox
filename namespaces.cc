@@ -174,8 +174,6 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
     int fd;
     KSYSCALL(fd = open(OPTION(Stdin).c_str(), O_RDONLY | O_CLOEXEC));
     KSYSCALL(dup2(fd, STDIN_FILENO));
-  } else {
-    KSYSCALL(close(STDIN_FILENO));
   }
   if (!OPTION(Stdout).empty()) {
     int fd;

@@ -39,8 +39,8 @@ private:
   }
 };
 
-void PrintResults(const ExecutionResults &results);
-void PrintJsonResults(const ExecutionResults &results);
+void PrintResults(const ExecutionResults &results, const std::string &file);
+void PrintJsonResults(const ExecutionResults &results, const std::string &file);
 
 namespace detail {
 template <typename Sandbox> class Register {

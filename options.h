@@ -80,10 +80,12 @@ DEFINE_FLAG(bool, Multiprocess, "multiprocess", 'p',
             "limits/report resource usage!");
 DEFINE_FLAG(bool, AllowChmod, "allow-chmod", 'c', "Allow using chmod.");
 DEFINE_FLAG(bool, Json, "json", 'j', "Print JSON output");
+DEFINE_FLAG(std::string, Stats, "stats", 's',
+            "File to write runtime stats to (defaults to stdout)");
 
 using Flags = std::tuple<WorkingDirectory, Stdin, Stdout, Stderr, TimeLimit,
                          WallLimit, MemoryLimit, FsizeLimit, Environment,
-                         ReadableDir, Multiprocess, AllowChmod, Json>;
+                         ReadableDir, Multiprocess, AllowChmod, Json, Stats>;
 
 // Positional arguments.
 DEFINE_POSITIONAL(

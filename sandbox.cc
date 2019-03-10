@@ -1,5 +1,6 @@
 #include "sandbox.h"
 #include <assert.h>
+#include <fstream>
 #include <iostream>
 #include <stdio.h>
 
@@ -34,37 +35,57 @@ std::pair<double, char> PrettyMemoryUsage(double mem) {
 }
 } // namespace
 
-void PrintResults(const ExecutionResults &results) {
+void PrintResults(const ExecutionResults &results, const std::string &file) {
   if (results.error) {
     fprintf(stderr, "\033[31;1mError\033[;m: %s\n", results.message.c_str());
     return;
   }
-  if (results.killed_by_sandbox) {
-    printf("\033[;1mKilled by sandbox\033[;m\n");
+  FILE *fout = stdout;
+  if (file != "") {
+    fout = fopen(file.c_str(), "w");
+    if (fout == nullptr) {
+      fprintf(stderr, "Error opening output file!\n");
+      return;
+    }
   }
-  printf("     CPU time: %8.2f s\n", results.cpu_time);
-  printf("  System time: %8.2f s\n", results.sys_time);
-  printf("    Wall time: %8.2f s\n", results.wall_time);
+  if (results.killed_by_sandbox) {
+    fprintf(fout, "\033[;1mKilled by sandbox\033[;m\n");
+  }
+  fprintf(fout, "     CPU time: %8.2f s\n", results.cpu_time);
+  fprintf(fout, "  System time: %8.2f s\n", results.sys_time);
+  fprintf(fout, "    Wall time: %8.2f s\n", results.wall_time);
   auto memory_usage = PrettyMemoryUsage(results.memory_usage);
-  printf(" Memory usage: %8.2f %ciB\n", memory_usage.first,
-         memory_usage.second);
+  fprintf(fout, " Memory usage: %8.2f %ciB\n", memory_usage.first,
+          memory_usage.second);
   if (results.status_code != 0) {
-    printf("  Return code: %d\n", results.status_code);
+    fprintf(fout, "  Return code: %d\n", results.status_code);
   }
   if (results.signal != 0) {
-    printf("       Signal: %s\n", strsignal(results.signal));
+    fprintf(fout, "       Signal: %s\n", strsignal(results.signal));
   }
 }
 
-void PrintJsonResults(const ExecutionResults &results) {
+void PrintJsonResults(const ExecutionResults &results,
+                      const std::string &file) {
+  std::ostream *fout = &std::cout;
+  std::ofstream outfile;
+  if (file != "") {
+    outfile.open(file);
+    if (outfile) {
+      fout = &outfile;
+    } else {
+      fprintf(stderr, "Error opening output file!\n");
+      return;
+    }
+  }
   if (results.error) {
-    std::cout << "{\"error\":true,\"message\":\"" << results.message << "\"}"
-              << std::endl;
+    (*fout) << "{\"error\":true,\"message\":\"" << results.message << "\"}"
+            << std::endl;
     return;
   }
-  std::cout << "{\"error\":false";
+  (*fout) << "{\"error\":false";
 #define JSON_PRINT(key)                                                        \
-  std::cout << ",\"" << #key << "\":" << std::boolalpha << results.key;
+  (*fout) << ",\"" << #key << "\":" << std::boolalpha << results.key;
   JSON_PRINT(cpu_time);
   JSON_PRINT(sys_time);
   JSON_PRINT(wall_time);
@@ -72,5 +93,5 @@ void PrintJsonResults(const ExecutionResults &results) {
   JSON_PRINT(status_code);
   JSON_PRINT(signal);
   JSON_PRINT(killed_by_sandbox);
-  std::cout << "}" << std::endl;
+  (*fout) << "}" << std::endl;
 }

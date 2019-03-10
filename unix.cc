@@ -165,8 +165,6 @@ namespace {
     int fd;
     CSYSCALL(fd = open(OPTION(Stdin).c_str(), O_RDONLY | O_CLOEXEC));
     CSYSCALL(dup2(fd, STDIN_FILENO));
-  } else {
-    CSYSCALL(close(STDIN_FILENO));
   }
   if (!OPTION(Stdout).empty()) {
     int fd;

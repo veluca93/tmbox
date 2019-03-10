@@ -5,8 +5,8 @@ int main(int argc, char **argv) {
   auto options = ::options::ParseCommandLine(argc, argv);
   ExecutionResults results = SandboxRegistry::Get()->Execute(options);
   if (options.Get<options::Json>()) {
-    PrintJsonResults(results);
+    PrintJsonResults(results, options.Get<options::Stats>());
   } else {
-    PrintResults(results);
+    PrintResults(results, options.Get<options::Stats>());
   }
 }
