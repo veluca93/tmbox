@@ -75,11 +75,12 @@ DEFINE_FLAG(
 DEFINE_FLAG(bool, Multiprocess, "multiprocess", 'p',
             "Allow more than one process. Warning: may not properly enforce "
             "limits/report resource usage!");
+DEFINE_FLAG(bool, AllowChmod, "allow-chmod", 'c', "Allow using chmod.");
 DEFINE_FLAG(bool, Json, "json", 'j', "Print JSON output");
 
-using Flags =
-    std::tuple<WorkingDirectory, Stdin, Stdout, Stderr, TimeLimit, WallLimit,
-               MemoryLimit, FsizeLimit, Environment, Multiprocess, Json>;
+using Flags = std::tuple<WorkingDirectory, Stdin, Stdout, Stderr, TimeLimit,
+                         WallLimit, MemoryLimit, FsizeLimit, Environment,
+                         Multiprocess, AllowChmod, Json>;
 
 // Positional arguments.
 DEFINE_POSITIONAL(

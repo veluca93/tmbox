@@ -1,7 +1,7 @@
 #include "sandbox.h"
 
 #include "defer.h"
-#include "disallow_fork/disallow_fork.h"
+#include "seccomp_filter/seccomp_filter.h"
 
 #include <assert.h>
 #include <chrono>
@@ -233,10 +233,11 @@ namespace {
   }
   envp.push_back(nullptr);
 
-  // If multiprocessing is disabled, stop the program from calling fork or exec.
-  if (!OPTION(Multiprocess)) {
-    CSYSCALL(disallow_fork());
-  }
+  // Block disallowed syscalls.
+  SyscallsToBlock to_block;
+  to_block.chmod = !OPTION(AllowChmod);
+  to_block.fork = !OPTION(Multiprocess);
+  CSYSCALL(seccomp_filter(to_block));
 
   CSYSCALL(execve(exe.c_str(), args.data(), envp.data()));
 

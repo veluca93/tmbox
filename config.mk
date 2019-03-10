@@ -2,8 +2,8 @@ CXXFLAGS:=-O3 -Wall -std=c++17 -flto -g -march=native -I. -fno-exceptions
 LDFLAGS:=-flto -lpthread
 CXX:=g++
 
-${TGT}build/disallow_fork/bpf.o.tar: ${TGT}build/disallow_fork/bpf_i386.o \
-	${TGT}build/disallow_fork/bpf_x86_64.o ${TGT}build/disallow_fork/bpf_x32.o
+${TGT}build/seccomp_filter/bpf.o.tar: ${TGT}build/seccomp_filter/bpf_i386.o \
+	${TGT}build/seccomp_filter/bpf_x86_64.o ${TGT}build/seccomp_filter/bpf_x32.o
 
 BOXES=${TGT}build/unix.o.tar ${TGT}build/namespaces.o.tar
 

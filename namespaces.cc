@@ -1,7 +1,7 @@
 #if __linux__
 #include "sandbox.h"
 
-#include "disallow_fork/disallow_fork.h"
+#include "seccomp_filter/seccomp_filter.h"
 
 #include <assert.h>
 #include <chrono>
@@ -57,34 +57,6 @@ namespace {
   // Change process group.
   CSYSCALL(setsid());
 
-  // Working directory
-  if (!OPTION(WorkingDirectory).empty()) {
-    CSYSCALL(chdir(OPTION(WorkingDirectory).c_str()));
-  }
-
-  // IO redirection
-  if (!OPTION(Stdin).empty()) {
-    int fd;
-    CSYSCALL(fd = open(OPTION(Stdin).c_str(), O_RDONLY | O_CLOEXEC));
-    CSYSCALL(dup2(fd, STDIN_FILENO));
-  } else {
-    CSYSCALL(close(STDIN_FILENO));
-  }
-  if (!OPTION(Stdout).empty()) {
-    int fd;
-    CSYSCALL(fd = open(OPTION(Stdout).c_str(),
-                       O_WRONLY | O_CLOEXEC | O_CREAT | O_TRUNC,
-                       S_IRUSR | S_IWUSR));
-    CSYSCALL(dup2(fd, STDOUT_FILENO));
-  }
-  if (!OPTION(Stderr).empty()) {
-    int fd;
-    CSYSCALL(fd = open(OPTION(Stderr).c_str(),
-                       O_WRONLY | O_CLOEXEC | O_CREAT | O_TRUNC,
-                       S_IRUSR | S_IWUSR));
-    CSYSCALL(dup2(fd, STDERR_FILENO));
-  }
-
   // Argument list
   auto &exe = OPTION(Executable);
   auto &other_args = OPTION(Args);
@@ -132,10 +104,11 @@ namespace {
   }
   envp.push_back(nullptr);
 
-  // If multiprocessing is disabled, stop the program from calling fork or exec.
-  if (!OPTION(Multiprocess)) {
-    CSYSCALL(disallow_fork());
-  }
+  // Block disallowed syscalls.
+  SyscallsToBlock to_block;
+  to_block.chmod = !OPTION(AllowChmod);
+  to_block.fork = !OPTION(Multiprocess);
+  CSYSCALL(seccomp_filter(to_block));
 
   CSYSCALL(execve(exe.c_str(), args.data(), envp.data()));
 
@@ -169,6 +142,34 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
   int pipefd[2];
   KSYSCALL(pipe(pipefd));
   KSYSCALL(fcntl(pipefd[1], F_SETFD, FD_CLOEXEC));
+
+  // Working directory
+  if (!OPTION(WorkingDirectory).empty()) {
+    CSYSCALL(chdir(OPTION(WorkingDirectory).c_str()));
+  }
+
+  // IO redirection
+  if (!OPTION(Stdin).empty()) {
+    int fd;
+    CSYSCALL(fd = open(OPTION(Stdin).c_str(), O_RDONLY | O_CLOEXEC));
+    CSYSCALL(dup2(fd, STDIN_FILENO));
+  } else {
+    CSYSCALL(close(STDIN_FILENO));
+  }
+  if (!OPTION(Stdout).empty()) {
+    int fd;
+    CSYSCALL(fd = open(OPTION(Stdout).c_str(),
+                       O_WRONLY | O_CLOEXEC | O_CREAT | O_TRUNC,
+                       S_IRUSR | S_IWUSR));
+    CSYSCALL(dup2(fd, STDOUT_FILENO));
+  }
+  if (!OPTION(Stderr).empty()) {
+    int fd;
+    CSYSCALL(fd = open(OPTION(Stderr).c_str(),
+                       O_WRONLY | O_CLOEXEC | O_CREAT | O_TRUNC,
+                       S_IRUSR | S_IWUSR));
+    CSYSCALL(dup2(fd, STDERR_FILENO));
+  }
 
   // TODO: set up mountpoints.
 
