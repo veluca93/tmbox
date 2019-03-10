@@ -21,6 +21,7 @@ public:
   virtual ExecutionResults Execute(const options::Options &options) = 0;
   virtual bool CanUse() = 0;
   virtual int Priority() = 0;
+  virtual ~Sandbox() {}
 };
 
 class SandboxRegistry {

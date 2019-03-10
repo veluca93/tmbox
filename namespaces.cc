@@ -1,6 +1,7 @@
 #if __linux__
 #include "sandbox.h"
 
+#include "defer.h"
 #include "seccomp_filter/seccomp_filter.h"
 
 #include <assert.h>
@@ -9,6 +10,7 @@
 #include <math.h>
 #include <sched.h>
 #include <stddef.h>
+#include <sys/mount.h>
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -123,8 +125,8 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
   have_signal = 1;
 }
 
-#define KSYSCALL(call)                                                         \
-  if ((call) == -1) {                                                          \
+#define KSYSCALL_EV(call, error_value)                                         \
+  if ((call) == error_value && errno != EEXIST) {                              \
     auto saved_errno = errno;                                                  \
     const char *prefix = #call ": ";                                           \
     int plen = strlen(prefix);                                                 \
@@ -137,48 +139,97 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
     _Exit(1);                                                                  \
   }
 
-[[noreturn]] void SandboxKeeper(const options::Options &options, int fd) {
+#define KSYSCALL(call) KSYSCALL_EV(call, -1)
+
+[[noreturn]] void SandboxKeeper(const options::Options &options, int fd,
+                                int uid, int gid, const char *temp_dir) {
   ExecutionResults results;
   int pipefd[2];
   KSYSCALL(pipe(pipefd));
   KSYSCALL(fcntl(pipefd[1], F_SETFD, FD_CLOEXEC));
 
+  // Setup uid and gid map.
+#define WRITE_TO_FILE(file, str)                                               \
+  {                                                                            \
+    std::string s = str;                                                       \
+    int f;                                                                     \
+    KSYSCALL(f = open(file, O_RDWR));                                          \
+    KSYSCALL(write(f, s.c_str(), s.size()));                                   \
+    KSYSCALL(close(f));                                                        \
+  }
+
+  WRITE_TO_FILE("/proc/self/uid_map",
+                std::to_string(uid) + " " + std::to_string(uid) + " 1");
+  WRITE_TO_FILE("/proc/self/setgroups", "deny");
+  WRITE_TO_FILE("/proc/self/gid_map",
+                std::to_string(gid) + " " + std::to_string(gid) + " 1");
+
   // Working directory
   if (!OPTION(WorkingDirectory).empty()) {
-    CSYSCALL(chdir(OPTION(WorkingDirectory).c_str()));
+    KSYSCALL(chdir(OPTION(WorkingDirectory).c_str()));
   }
 
   // IO redirection
   if (!OPTION(Stdin).empty()) {
     int fd;
-    CSYSCALL(fd = open(OPTION(Stdin).c_str(), O_RDONLY | O_CLOEXEC));
-    CSYSCALL(dup2(fd, STDIN_FILENO));
+    KSYSCALL(fd = open(OPTION(Stdin).c_str(), O_RDONLY | O_CLOEXEC));
+    KSYSCALL(dup2(fd, STDIN_FILENO));
   } else {
-    CSYSCALL(close(STDIN_FILENO));
+    KSYSCALL(close(STDIN_FILENO));
   }
   if (!OPTION(Stdout).empty()) {
     int fd;
-    CSYSCALL(fd = open(OPTION(Stdout).c_str(),
+    KSYSCALL(fd = open(OPTION(Stdout).c_str(),
                        O_WRONLY | O_CLOEXEC | O_CREAT | O_TRUNC,
                        S_IRUSR | S_IWUSR));
-    CSYSCALL(dup2(fd, STDOUT_FILENO));
+    KSYSCALL(dup2(fd, STDOUT_FILENO));
   }
   if (!OPTION(Stderr).empty()) {
     int fd;
-    CSYSCALL(fd = open(OPTION(Stderr).c_str(),
+    KSYSCALL(fd = open(OPTION(Stderr).c_str(),
                        O_WRONLY | O_CLOEXEC | O_CREAT | O_TRUNC,
                        S_IRUSR | S_IWUSR));
-    CSYSCALL(dup2(fd, STDERR_FILENO));
+    KSYSCALL(dup2(fd, STDERR_FILENO));
   }
 
-  // TODO: set up mountpoints.
+  KSYSCALL(mount("", temp_dir, "tmpfs", MS_NOEXEC, ""));
+
+#define MAKEDIRS(d)                                                            \
+  {                                                                            \
+    std::string dir = d;                                                       \
+    for (size_t i = 1; i < dir.size() + 1; i++) {                              \
+      if (i == dir.size() || dir[i] == '/') {                                  \
+        std::string sub = dir.substr(0, i);                                    \
+        KSYSCALL(mkdir(sub.c_str(), S_IRWXU));                                 \
+      }                                                                        \
+    }                                                                          \
+  }
+
+  const auto &readable_dirs = OPTION(ReadableDir);
+
+  char wd_buf[8192];
+  KSYSCALL_EV(getcwd(wd_buf, sizeof(wd_buf) - 1), nullptr);
+
+  for (size_t i = 0; i < readable_dirs.size(); i++) {
+    auto tgt = temp_dir + readable_dirs[i];
+    MAKEDIRS(tgt);
+    KSYSCALL(
+        mount(readable_dirs[i].c_str(), tgt.c_str(), "", MS_BIND | MS_REC, ""));
+    KSYSCALL(mount("", tgt.c_str(), "", MS_REMOUNT | MS_BIND | MS_RDONLY, ""));
+  }
+
+  std::string new_wd = std::string(temp_dir) + wd_buf;
+  MAKEDIRS(new_wd)
+  KSYSCALL(mount(wd_buf, new_wd.c_str(), "", MS_BIND | MS_REC, ""));
+
+  // Chroot in the new hierarchy and go to the correct working directory.
+  KSYSCALL(chroot(temp_dir));
+  KSYSCALL(chdir(wd_buf));
 
   int fork_result;
   KSYSCALL(fork_result = fork());
   if (fork_result == 0) {
     close(pipefd[0]);
-    // Drop privileges.
-    setuid(65534);
     Child(options, pipefd[1]);
   }
 
@@ -260,8 +311,8 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
 
 } // namespace
 
-#define SYSCALL(call)                                                          \
-  if ((call) == -1 && errno != EAGAIN) {                                       \
+#define SYSCALL_EV(call, error_value)                                          \
+  if ((call) == error_value && errno != EAGAIN) {                              \
     auto saved_errno = errno;                                                  \
     results.error = true;                                                      \
     results.message = #call;                                                   \
@@ -269,6 +320,8 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
     results.message += strerror(saved_errno);                                  \
     return results;                                                            \
   }
+
+#define SYSCALL(call) SYSCALL_EV(call, -1)
 
 #define WAITKEEPER()                                                           \
   {                                                                            \
@@ -291,6 +344,22 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
 
 ExecutionResults NamespaceSandbox::Execute(const options::Options &options) {
   ExecutionResults results;
+
+  char tmpdir[] = "/tmp/tmboxXXXXXX";
+  SYSCALL_EV(mkdtemp(tmpdir), nullptr);
+  Defer defer([&]() {
+    int ret = rmdir(tmpdir);
+    if (ret == -1) {
+      if (!results.error) {
+        fprintf(stderr, "Error removing temporary directory: %s\n",
+                strerror(errno));
+      }
+    }
+  });
+
+  int uid = getuid();
+  int gid = getgid();
+
   int pipefd[2];
   SYSCALL(pipe2(pipefd, O_NONBLOCK));
   int fork_result;
@@ -301,7 +370,7 @@ ExecutionResults NamespaceSandbox::Execute(const options::Options &options) {
                       nullptr));
   if (fork_result == 0) {
     close(pipefd[0]);
-    SandboxKeeper(options, pipefd[1]);
+    SandboxKeeper(options, pipefd[1], uid, gid, tmpdir);
   }
 
   int child_pid = fork_result;

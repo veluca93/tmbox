@@ -1,4 +1,5 @@
 #include "sandbox.h"
+#include <assert.h>
 #include <unistd.h>
 
 template <size_t N, size_t M>
@@ -23,6 +24,9 @@ ExecutionResults RunProgramWithOptions(const char *const (&args)[N],
     s = wd;
     s += "/bin/";
     s += program;
+    char *r = realpath(s.c_str(), wd);
+    assert(r != nullptr);
+    s = wd;
   }
   args_to_pass[arg++] = const_cast<char *>(s.c_str());
   for (size_t i = 0; i < M; i++) {

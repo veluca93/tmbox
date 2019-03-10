@@ -8,8 +8,9 @@ namespace {
 using testing::Eq;
 
 TEST(ProcessTest, SigAbortWorks) {
-  auto results = RunProgramWithOptions({""}, "abort", {""});
+  auto results = RunProgramWithOptions({"-r", "/"}, "abort", {""});
   EXPECT_FALSE(results.error);
+  EXPECT_EQ(results.message, "");
   EXPECT_THAT(results.signal, Eq(SIGABRT));
 }
 
