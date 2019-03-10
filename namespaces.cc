@@ -176,6 +176,8 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
   KSYSCALL(fork_result = fork());
   if (fork_result == 0) {
     close(pipefd[0]);
+    // Drop privileges.
+    setuid(65534);
     Child(options, pipefd[1]);
   }
 
@@ -199,8 +201,8 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
     results.error = true;
     results.message = "Child process: ";
     results.message += child_buf;
-    char error_len = 1;
-    write(fd, &error_len, sizeof(char));
+    unsigned error_len = results.message.size();
+    write(fd, &error_len, sizeof error_len);
     write(fd, results.message.c_str(), results.message.size());
     _Exit(1);
   }
@@ -281,7 +283,7 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
     if (WIFEXITED(child_ret) && WEXITSTATUS(child_ret) != 0) {                 \
       results.error = true;                                                    \
       results.message = "Keeper died with return code ";                       \
-      results.message += WEXITSTATUS(child_ret);                               \
+      results.message += std::to_string(WEXITSTATUS(child_ret));               \
       return results;                                                          \
     }                                                                          \
   }
@@ -363,15 +365,16 @@ ExecutionResults NamespaceSandbox::Execute(const options::Options &options) {
       return results;
     }
   }
-  WAITKEEPER();
 
   // Return error from keeper, if any.
   if (error_len > 0) {
+    waitpid(child_pid, nullptr, 0);
     results.error = true;
     results.message = "Keeper: ";
     results.message += std::string(error_buf.data(), error_buf.size());
     return results;
   }
+  WAITKEEPER();
 
   return results;
 }
