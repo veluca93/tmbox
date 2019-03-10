@@ -220,6 +220,9 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
   MAKEDIRS(new_wd)
   KSYSCALL(mount(wd_buf, new_wd.c_str(), "", MS_BIND | MS_REC, ""));
 
+  // Done setting up evaluation chroot, remount tmpdir readonly.
+  KSYSCALL(mount("", temp_dir, "", MS_REMOUNT | MS_RDONLY, ""));
+
   // Chroot in the new hierarchy and go to the correct working directory.
   KSYSCALL(chroot(temp_dir));
   KSYSCALL(chdir(wd_buf));
