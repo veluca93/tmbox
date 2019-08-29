@@ -79,13 +79,14 @@ DEFINE_FLAG(bool, Multiprocess, "multiprocess", 'p',
             "Allow more than one process. Warning: may not properly enforce "
             "limits/report resource usage!");
 DEFINE_FLAG(bool, AllowChmod, "allow-chmod", 'c', "Allow using chmod.");
+DEFINE_FLAG(bool, MountTmpfs, "mount-tmpfs", 'T', "Mount inside the sandbox /tmp and /dev/null");
 DEFINE_FLAG(bool, Json, "json", 'j', "Print JSON output");
 DEFINE_FLAG(std::string, Stats, "stats", 's',
             "File to write runtime stats to (defaults to stdout)");
 
 using Flags = std::tuple<WorkingDirectory, Stdin, Stdout, Stderr, TimeLimit,
                          WallLimit, MemoryLimit, FsizeLimit, Environment,
-                         ReadableDir, Multiprocess, AllowChmod, Json, Stats>;
+                         ReadableDir, Multiprocess, AllowChmod, MountTmpfs, Json, Stats>;
 
 // Positional arguments.
 DEFINE_POSITIONAL(

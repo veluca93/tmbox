@@ -14,6 +14,7 @@
 #include <sys/resource.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
+#include <sys/sysmacros.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -214,6 +215,18 @@ void sig_hdl(int /*sig*/, siginfo_t * /*siginfo*/, void * /*context*/) {
     KSYSCALL(
         mount(readable_dirs[i].c_str(), tgt.c_str(), "", MS_BIND | MS_REC, ""));
     KSYSCALL(mount("", tgt.c_str(), "", MS_REMOUNT | MS_BIND | MS_RDONLY, ""));
+  }
+  if (OPTION(MountTmpfs)) {
+    std::string dev = std::string(temp_dir) + "/dev";
+    MAKEDIRS(dev);
+    KSYSCALL(mount("tmpfs", dev.c_str(), "tmpfs", 0, ""));
+    std::string dev_null = std::string(temp_dir) + "/dev/null";
+    KSYSCALL(mknod(dev_null.c_str(),
+                   S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH,
+                   makedev(1, 3)));
+    std::string tmp = std::string(temp_dir) + "/tmp";
+    MAKEDIRS(tmp);
+    KSYSCALL(mount("tmpfs", tmp.c_str(), "tmpfs", 0, "size=256M"));
   }
 
   std::string new_wd = std::string(temp_dir) + wd_buf;
