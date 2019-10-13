@@ -11,6 +11,10 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <errno.h>
+#include <inttypes.h>
+#include <signal.h>
+#include <spawn.h>
 
 class UnixSandbox : public Sandbox {
 public:
