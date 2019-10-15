@@ -207,7 +207,7 @@ namespace {
   _Exit(123);
 }
 
-#ifdef 0 // temporary disabled __APPLE__
+#if 0 // temporary disabled __APPLE__
 [[noreturn]] void MemoryWatcher(int child_pid, uint64_t memory_limit_kb) {
   while (true) {
     uint64_t mem = 0;
