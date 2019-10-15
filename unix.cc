@@ -165,6 +165,7 @@ namespace {
       CSYSCALL(setrlimit(RLIMIT_##res, &rlim));                                \
     }                                                                          \
   }
+
   SET_RLIM(AS, OPTION(MemoryLimit) * 1024);
   SET_RLIM(CPU, ceil(OPTION(TimeLimit)));
   SET_RLIM(FSIZE, ceil(OPTION(FsizeLimit)) * 1024);
@@ -206,20 +207,6 @@ namespace {
   fprintf(stderr, "The impossible happened!\n");
   _Exit(123);
 }
-
-#if 0 // temporary disabled __APPLE__
-[[noreturn]] void MemoryWatcher(int child_pid, uint64_t memory_limit_kb) {
-  while (true) {
-    uint64_t mem = 0;
-    if (GetProcessMemoryUsage(child_pid, &mem) == 0) {
-      if (memory_limit_kb != 0 && mem > memory_limit_kb) {
-        kill(child_pid, SIGKILL);
-      }
-    }
-    usleep(100);
-  }
-}
-#endif
 
 sig_atomic_t have_signal = 0;
 
@@ -272,20 +259,6 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
   SYSCALL(sigaction(SIGTERM, &act, nullptr));
   SYSCALL(sigaction(SIGINT, &act, nullptr));
 
-  // Apple only: start memory watcher.
-#if 0 //FIXME: Causes tmbox to not terminate on macOS!
-//#ifdef __APPLE__
-  int memory_watcher_pid;
-  SYSCALL(memory_watcher_pid = fork());
-  if (memory_watcher_pid == 0) {
-    MemoryWatcher(child_pid, OPTION(MemoryLimit));
-  }
-  Defer defer([&memory_watcher_pid]() {
-    kill(memory_watcher_pid, SIGKILL);
-    waitpid(memory_watcher_pid, nullptr, 0);
-  });
-#endif
-
   // Child process started correctly: wait loop.
   auto program_start = std::chrono::high_resolution_clock::now();
   auto elapsed_seconds = [&program_start]() {
@@ -298,25 +271,24 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
   bool has_exited = false;
   int child_status = 0;
   
-#ifdef __APPLE__
-  uint64_t apple_memory_usage = 0;
-#endif
   while ((OPTION(WallLimit) < 1e-6 || elapsed_seconds() < OPTION(WallLimit)) &&
          !have_signal) {
     int wait_ret;
+
+#ifdef __APPLE__
+    // apparently, macOS ignores memory rlimit. So watch the process memory usage
+    // and kill it if it uses too much.
+    uint64_t mem;
+    GetProcessMemoryUsage(child_pid, &mem);
+    if (mem > OPTION(MemoryLimit))
+      break;
+#endif
+
     SYSCALL(wait_ret = waitpid(child_pid, &child_status, WNOHANG));
     if (wait_ret == child_pid) {
       has_exited = true;
       break;
     }
-#ifdef __APPLE__
-  uint64_t mem;
-  if (GetProcessMemoryUsage(child_pid, &mem) == 0) {
-    if (mem > apple_memory_usage) {
-      apple_memory_usage = mem;
-    }
-  }
-#endif
     usleep(100);
   }
   if (!has_exited) {
@@ -328,7 +300,8 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
   getrusage(RUSAGE_CHILDREN, &rusage);
 
 #ifdef __APPLE__
-  results.memory_usage = apple_memory_usage;
+  // on macOS, rusage memory usage is in bytes!
+  results.memory_usage = rusage.ru_maxrss / 1024;
 #else
   results.memory_usage = rusage.ru_maxrss;
 #endif
