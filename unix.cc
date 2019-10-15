@@ -29,34 +29,7 @@ public:
 namespace {
 
 #ifdef __APPLE__
-int GetProcessMemoryUsageFromProc(pid_t pid, uint64_t *memory_usage_kb) {
-  int fd = open(("/proc/" + std::to_string(pid) + "/statm").c_str(),
-                O_RDONLY | O_CLOEXEC);
-  if (fd == -1)
-    return -1;
-  char buf[64 * 1024] = {};
-  size_t num_read = 0;
-  ssize_t cur = 0;
-  do {
-    cur = read(fd, buf + num_read, 64 * 1024 - num_read);
-    if (cur < 0) {
-      close(fd);
-      return -1;
-    }
-    num_read += cur;
-  } while (cur > 0);
-  close(fd);
-  if (sscanf(buf, "%" PRIu64, memory_usage_kb) != 1) {
-    fprintf(stderr, "Unable to get memory usage from /proc: %s", buf);
-    exit(1);
-  }
-  *memory_usage_kb *= 4;
-  return 0;
-}
-
 int GetProcessMemoryUsage(pid_t pid, uint64_t *memory_usage_kb) {
-  if (GetProcessMemoryUsageFromProc(pid, memory_usage_kb) == 0)
-    return 0;
   int pipe_fds[2];
   if (pipe(pipe_fds) == -1)
     return errno;
@@ -76,28 +49,14 @@ int GetProcessMemoryUsage(pid_t pid, uint64_t *memory_usage_kb) {
   ret = posix_spawn_file_actions_addclose(&actions, pipe_fds[1]);
   if (ret != 0)
     return ret;
-  std::vector<std::vector<char>> args;
-  auto add_arg = [&args](std::string s) {
-    std::vector<char> arg(s.size() + 1);
-    std::copy(s.begin(), s.end(), arg.begin());
-    arg.back() = '\0';
-    args.push_back(std::move(arg));
-  };
-  add_arg("ps");
-  add_arg("-o");
-  add_arg("rss=");
-  add_arg(std::to_string(pid));
 
-  std::vector<char *> args_list(args.size() + 1);
-  for (size_t i = 0; i < args.size(); i++)
-    args_list[i] = args[i].data();
-  args_list.back() = nullptr;
-
-  char **environ = {nullptr};
+  char pid_s[20];
+  sprintf(pid_s, "%d", pid);
+  char *args[] = {"ps", "-o", "rss=", pid_s, nullptr};
+  char *environ[] = {nullptr};
 
   int child_pid = 0;
-  ret = posix_spawnp(&child_pid, "ps", &actions, nullptr, args_list.data(),
-                     environ);
+  ret = posix_spawnp(&child_pid, "ps", &actions, nullptr, args, environ);
   close(pipe_fds[1]);
   if (ret != 0) {
     close(pipe_fds[0]);
@@ -248,7 +207,7 @@ namespace {
   _Exit(123);
 }
 
-#ifdef __APPLE__
+#ifdef 0 // temporary disabled __APPLE__
 [[noreturn]] void MemoryWatcher(int child_pid, uint64_t memory_limit_kb) {
   while (true) {
     uint64_t mem = 0;
@@ -314,7 +273,8 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
   SYSCALL(sigaction(SIGINT, &act, nullptr));
 
   // Apple only: start memory watcher.
-#ifdef __APPLE__
+#if 0 //FIXME: Causes tmbox to not terminate on macOS!
+//#ifdef __APPLE__
   int memory_watcher_pid;
   SYSCALL(memory_watcher_pid = fork());
   if (memory_watcher_pid == 0) {
@@ -337,6 +297,10 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
 
   bool has_exited = false;
   int child_status = 0;
+  
+#ifdef __APPLE__
+  uint64_t apple_memory_usage = 0;
+#endif
   while ((OPTION(WallLimit) < 1e-6 || elapsed_seconds() < OPTION(WallLimit)) &&
          !have_signal) {
     int wait_ret;
@@ -345,6 +309,14 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
       has_exited = true;
       break;
     }
+#ifdef __APPLE__
+  uint64_t mem;
+  if (GetProcessMemoryUsage(child_pid, &mem) == 0) {
+    if (mem > apple_memory_usage) {
+      apple_memory_usage = mem;
+    }
+  }
+#endif
     usleep(100);
   }
   if (!has_exited) {
@@ -354,8 +326,12 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
   }
   struct rusage rusage {};
   getrusage(RUSAGE_CHILDREN, &rusage);
-  results.memory_usage = rusage.ru_maxrss;
 
+#ifdef __APPLE__
+  results.memory_usage = apple_memory_usage;
+#else
+  results.memory_usage = rusage.ru_maxrss;
+#endif
   results.status_code = WIFEXITED(child_status) ? WEXITSTATUS(child_status) : 0;
   results.signal = WIFSIGNALED(child_status) ? WTERMSIG(child_status) : 0;
   results.wall_time = elapsed_seconds();
