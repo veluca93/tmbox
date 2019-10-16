@@ -1,8 +1,8 @@
 #include "seccomp_filter.h"
 
 #if !__has_include(<linux/seccomp.h>)
-#warn "No support for disallowing fork."
-int seccomp_filter() { return 0; }
+#warning "No support for disallowing fork."
+int seccomp_filter(SyscallsToBlock _) { return 0; }
 #else
 
 #include <errno.h>

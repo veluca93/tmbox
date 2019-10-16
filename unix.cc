@@ -11,6 +11,10 @@
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <errno.h>
+#include <inttypes.h>
+#include <signal.h>
+#include <spawn.h>
 
 class UnixSandbox : public Sandbox {
 public:
@@ -25,34 +29,7 @@ public:
 namespace {
 
 #ifdef __APPLE__
-int GetProcessMemoryUsageFromProc(pid_t pid, uint64_t *memory_usage_kb) {
-  int fd = open(("/proc/" + std::to_string(pid) + "/statm").c_str(),
-                O_RDONLY | O_CLOEXEC);
-  if (fd == -1)
-    return -1;
-  char buf[64 * 1024] = {};
-  size_t num_read = 0;
-  ssize_t cur = 0;
-  do {
-    cur = read(fd, buf + num_read, 64 * 1024 - num_read);
-    if (cur < 0) {
-      close(fd);
-      return -1;
-    }
-    num_read += cur;
-  } while (cur > 0);
-  close(fd);
-  if (sscanf(buf, "%" PRIu64, memory_usage_kb) != 1) {
-    fprintf(stderr, "Unable to get memory usage from /proc: %s", buf);
-    exit(1);
-  }
-  *memory_usage_kb *= 4;
-  return 0;
-}
-
 int GetProcessMemoryUsage(pid_t pid, uint64_t *memory_usage_kb) {
-  if (GetProcessMemoryUsageFromProc(pid, memory_usage_kb) == 0)
-    return 0;
   int pipe_fds[2];
   if (pipe(pipe_fds) == -1)
     return errno;
@@ -72,28 +49,14 @@ int GetProcessMemoryUsage(pid_t pid, uint64_t *memory_usage_kb) {
   ret = posix_spawn_file_actions_addclose(&actions, pipe_fds[1]);
   if (ret != 0)
     return ret;
-  std::vector<std::vector<char>> args;
-  auto add_arg = [&args](std::string s) {
-    std::vector<char> arg(s.size() + 1);
-    std::copy(s.begin(), s.end(), arg.begin());
-    arg.back() = '\0';
-    args.push_back(std::move(arg));
-  };
-  add_arg("ps");
-  add_arg("-o");
-  add_arg("rss=");
-  add_arg(std::to_string(pid));
 
-  std::vector<char *> args_list(args.size() + 1);
-  for (size_t i = 0; i < args.size(); i++)
-    args_list[i] = args[i].data();
-  args_list.back() = nullptr;
-
-  char **environ = {nullptr};
+  char pid_s[20];
+  sprintf(pid_s, "%d", pid);
+  char *args[] = {"ps", "-o", "rss=", pid_s, nullptr};
+  char *environ[] = {nullptr};
 
   int child_pid = 0;
-  ret = posix_spawnp(&child_pid, "ps", &actions, nullptr, args_list.data(),
-                     environ);
+  ret = posix_spawnp(&child_pid, "ps", &actions, nullptr, args, environ);
   close(pipe_fds[1]);
   if (ret != 0) {
     close(pipe_fds[0]);
@@ -202,6 +165,7 @@ namespace {
       CSYSCALL(setrlimit(RLIMIT_##res, &rlim));                                \
     }                                                                          \
   }
+
   SET_RLIM(AS, OPTION(MemoryLimit) * 1024);
   SET_RLIM(CPU, ceil(OPTION(TimeLimit)));
   SET_RLIM(FSIZE, ceil(OPTION(FsizeLimit)) * 1024);
@@ -243,20 +207,6 @@ namespace {
   fprintf(stderr, "The impossible happened!\n");
   _Exit(123);
 }
-
-#ifdef __APPLE__
-[[noreturn]] void MemoryWatcher(int child_pid, uint64_t memory_limit_kb) {
-  while (true) {
-    uint64_t mem = 0;
-    if (GetProcessMemoryUsage(child_pid, &mem) == 0) {
-      if (memory_limit_kb != 0 && mem > memory_limit_kb) {
-        kill(child_pid, SIGKILL);
-      }
-    }
-    usleep(100);
-  }
-}
-#endif
 
 sig_atomic_t have_signal = 0;
 
@@ -309,19 +259,6 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
   SYSCALL(sigaction(SIGTERM, &act, nullptr));
   SYSCALL(sigaction(SIGINT, &act, nullptr));
 
-  // Apple only: start memory watcher.
-#ifdef __APPLE__
-  int memory_watcher_pid;
-  SYSCALL(memory_watcher_pid = fork());
-  if (memory_watcher_pid == 0) {
-    MemoryWatcher(child_pid, OPTION(MemoryLimit));
-  }
-  Defer defer([&memory_watcher_pid]() {
-    kill(memory_watcher_pid, SIGKILL);
-    waitpid(memory_watcher_pid, nullptr, 0);
-  });
-#endif
-
   // Child process started correctly: wait loop.
   auto program_start = std::chrono::high_resolution_clock::now();
   auto elapsed_seconds = [&program_start]() {
@@ -333,9 +270,20 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
 
   bool has_exited = false;
   int child_status = 0;
+  
   while ((OPTION(WallLimit) < 1e-6 || elapsed_seconds() < OPTION(WallLimit)) &&
          !have_signal) {
     int wait_ret;
+
+#ifdef __APPLE__
+    // apparently, macOS ignores memory rlimit. So watch the process memory usage
+    // and kill it if it uses too much.
+    uint64_t mem;
+    GetProcessMemoryUsage(child_pid, &mem);
+    if (mem > OPTION(MemoryLimit))
+      break;
+#endif
+
     SYSCALL(wait_ret = waitpid(child_pid, &child_status, WNOHANG));
     if (wait_ret == child_pid) {
       has_exited = true;
@@ -350,8 +298,13 @@ ExecutionResults UnixSandbox::Execute(const options::Options &options) {
   }
   struct rusage rusage {};
   getrusage(RUSAGE_CHILDREN, &rusage);
-  results.memory_usage = rusage.ru_maxrss;
 
+#ifdef __APPLE__
+  // on macOS, rusage memory usage is in bytes!
+  results.memory_usage = rusage.ru_maxrss / 1024;
+#else
+  results.memory_usage = rusage.ru_maxrss;
+#endif
   results.status_code = WIFEXITED(child_status) ? WEXITSTATUS(child_status) : 0;
   results.signal = WIFSIGNALED(child_status) ? WTERMSIG(child_status) : 0;
   results.wall_time = elapsed_seconds();
